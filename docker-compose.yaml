@@ -1,0 +1,76 @@
+version: "3"
+services:
+  mysql:
+    image: mysql:latest
+    container_name: sem_database
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+        MYSQL_DATABASE: products
+        MYSQL_USER: mysql
+        MYSQL_PASSWORD: docker
+        MYSQL_ROOT_PASSWORD: docker
+    restart: unless-stopped
+    volumes:
+      - ./database/volume:/var/lib/mysql
+    ports:
+      - "8003:3306"
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.9.3
+    container_name: sem_elasticsearch
+    # restart: on-failure
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200
+      - 9300:9300
+    volumes:
+      - ./elasticsearch:/usr/share/elasticsearch/data
+    logging:
+        options:
+            max-size: "10k"
+            max-file: "10"
+  logstash:
+    build:
+      context: .
+      dockerfile: ./logstash/Dockerfile
+    container_name: sem_logstash
+    # restart: on-failure
+    depends_on:
+      - elasticsearch
+      - mysql
+    volumes:
+      - ./logstash/pipeline/:/usr/share/logstash/pipeline/
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash/config/pipelines.yml:/usr/share/logstash/config/pipelines.yml
+      - ./logstash/config/queries/:/usr/share/logstash/config/queries/
+      # - C:\Users\ravips\Desktop\programs\go\c2\sync-elasticsearch-mysql\volumes
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10k"
+        max-file: "10"
+  backend:
+    build: ./backend
+    container_name: sem_backend
+    env_file:
+        - ./backend/.env
+    # restart: on-failure
+    depends_on:
+      - elasticsearch
+      - logstash
+    ports:
+      - 8000:8080
+  ui:
+    build: ./ui
+    container_name: sem_ui
+    # restart: on-failure
+    depends_on:
+      - backend
+    ports:
+      - 80:80
